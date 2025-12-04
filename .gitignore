@@ -1,0 +1,30 @@
+# Archivos de Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!terraform.tfvars.example
+.terraform.lock.hcl
+
+# Archivos de Lambda
+lambda_function.zip
+lambda_layer.zip
+layer/
+*.pyc
+__pycache__/
+
+# Archivos temporales
+response.json
+cross-account-backup-jobs.csv
+*.xlsx
+*.csv
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

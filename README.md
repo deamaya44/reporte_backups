@@ -1,102 +1,48 @@
 # Reporte Automático de Backups AWS
 
-Sistema automatizado para generar reportes diarios de backups de AWS y enviarlos por email usando AWS Lambda, S3 y SES.
+Sistema Lambda que genera reportes diarios de backups multi-cuenta y los envía por email con Excel adjunto.
 
-## 📋 Características
+## Prerrequisitos
 
-- ✅ Filtra backups por rangos de tiempo específicos:
-  - **Día anterior**: Jobs finalizados después de las 07:00 AM
-  - **Día actual**: Jobs finalizados entre 00:00 y 07:00 AM
-- 📊 Genera reporte Excel con resumen y detalles
-- 📧 Envía emails automáticos con el reporte adjunto
-- 💾 Almacena reportes históricos en S3
-- ⏰ Ejecución programada diaria
-- 🏷️ Mapeo de Account IDs a nombres legibles
+- AWS Backup configurado en todas las cuentas/subcuentas
+- Cuenta principal con acceso cross-account a los datos de backups (AWS Organizations)
+- Terraform y AWS CLI configurados
 
-## 🏗️ Arquitectura
+## Cómo Funciona
 
-```
-EventBridge Rule (Cron)
-       ↓
-Lambda Function
-       ↓
-   ┌───┴───┐
-   ↓       ↓
-  S3      SES
-(Reports) (Email)
-```
+1. **EventBridge** ejecuta la Lambda diariamente a las 5:15 AM (Colombia)
+2. **Lambda** consulta backups de todas las cuentas vía AWS Backup API:
+   - Día anterior: jobs finalizados después de 07:00 AM
+   - Día actual: jobs finalizados entre 00:00 - 07:00 AM
+3. Genera Excel con 3 hojas: Resumen, Día Anterior, Día Actual
+4. Guarda el reporte en **S3** y lo envía por **SES**
 
-## 📦 Recursos Creados
+## Despliegue
 
-- **Lambda Function**: Procesa backups y genera reportes
-- **Lambda Layer**: Dependencias Python (openpyxl)
-- **S3 Bucket**: Almacenamiento de reportes con lifecycle policies
-- **IAM Role/Policy**: Permisos para Lambda
-- **EventBridge Rule**: Programación diaria (7:15 AM Chile)
-- **CloudWatch Logs**: Logs de ejecución (30 días retención)
-- **SES Email Identities**: Verificación de emails
+### 1. Configurar Variables
 
-## 🚀 Despliegue
-
-### Prerrequisitos
-
-- Terraform >= 1.0
-- AWS CLI configurado
-- Python 3.11+ (para construir el layer)
-- pip
-
-### Paso 1: Configurar Variables
-
-Edita `variables.tf` o crea un archivo `terraform.tfvars`:
+Edita `locals.tf`:
 
 ```hcl
-aws_region  = "us-east-1"
-environment = "prod"
+locals {
+  from_email = "tu-email@dominio.com"
+  to_emails  = ["destinatario@dominio.com"]
+  cc_emails  = []  # Opcional
 
-# Emails
-from_email = "david.amaya@axity.com"
-to_emails  = ["Luis.PerezR@axity.com"]
-cc_emails  = []  # Opcional
-
-# Mapeo de cuentas AWS
-account_mapping = {
-  "123456789012" = "No-SAP"
-  "234567890123" = "Redes y seguridad"
-  "345678901234" = "SAP"
+  schedule_expression = "cron(15 10 * * ? *)"  # 5:15 AM Colombia (UTC-5)
 }
-
-# Programación (UTC)
-# Por defecto: 7:15 AM Chile = 10:15 AM UTC
-schedule_expression = "cron(15 10 * * ? *)"
 ```
 
-### Paso 2: Desplegar Infraestructura
+### 2. Aplicar Terraform
 
 ```bash
-# Inicializar Terraform
 terraform init
-
-# Revisar plan
-terraform plan
-
-# Aplicar cambios
 terraform apply
 ```
 
-### Paso 3: Verificar Emails en SES
+### 3. Verificar Emails en SES
 
-**⚠️ IMPORTANTE**: AWS SES requiere verificación de emails antes de poder enviar.
-
-#### Opción A: Verificación Manual (Inmediata)
-
-1. Ve a la consola de AWS SES
-2. En "Verified identities", encontrarás los emails creados
-3. Revisa la bandeja de entrada de cada email
-4. Haz clic en el enlace de verificación
-
-#### Opción B: Verificación Automática
-
-Si tienes acceso programático a los buzones:
+Revisa la bandeja de entrada de los emails y confirma la verificación (enlace que envía AWS SES).
 
 ```bash
 # Listar identidades pendientes
@@ -150,234 +96,31 @@ Se adjunta el reporte detallado en Excel.
 - T. FAILED
 
 ### Hoja 2: Día Anterior (Detalle)
-- BackupJobID
-- Status
-- AccountID
+
+## Estructura del Reporte Excel
+
+### Hoja 1: Resumen
+Consolidado total de ambos días con columnas:
 - AccountName
-- ResourceName
-- MessageCategory
-- ResourceID
-- ResourceType
-- CreationTime
+- T. COMPLETED
+- T. FAILED
 
-### Hoja 3: Día Actual (Detalle)
-- Mismos campos que Hoja 2
+### Hoja 2: Día Anterior
+Detalle de backups finalizados después de 07:00 AM del día anterior
 
-## 🔧 Configuración Avanzada
+### Hoja 3: Día Actual  
+Detalle de backups finalizados entre 00:00 - 07:00 AM del día actual
 
-### Cambiar Horario de Ejecución
+## Troubleshooting
 
-```hcl
-# Lunes a Viernes a las 8:00 AM Chile (11:00 AM UTC)
-schedule_expression = "cron(0 11 ? * MON-FRI *)"
+**Email no llega**: Verifica que los emails estén verificados en AWS SES
 
-# Todos los días a las 6:00 AM Chile (9:00 AM UTC)
-schedule_expression = "cron(0 9 * * ? *)"
-```
+**Hoja vacía**: Revisa los logs de CloudWatch para ver si se están obteniendo backups
 
-### Agregar Más Destinatarios
+**Error de permisos**: Asegúrate que la cuenta tenga acceso cross-account a AWS Organizations
 
-```hcl
-to_emails = [
-  "Luis.PerezR@axity.com",
-  "otro.usuario@axity.com"
-]
-
-cc_emails = [
-  "felipe.ortiz@axity.com",
-  "joel.vidal@axity.com"
-]
-```
-
-### Modificar Mapeo de Cuentas
-
-Edita directamente en `lambda_function.py`:
-
-```python
-ACCOUNT_MAPPING = {
-    'tu-account-id-1': 'Nombre Cuenta 1',
-    'tu-account-id-2': 'Nombre Cuenta 2',
-    # ...
-}
-```
-
-Luego re-aplica:
+## Limpieza
 
 ```bash
-terraform apply
-```
-
-### Cambiar Retención de Reportes en S3
-
-```hcl
-s3_retention_days = 365  # 1 año
-```
-
-## 📊 Monitoreo
-
-### Ver Logs en CloudWatch
-
-```bash
-# Tiempo real
-aws logs tail /aws/lambda/backup-reporter-prod --follow
-
-# Últimas 1 hora
-aws logs tail /aws/lambda/backup-reporter-prod --since 1h
-```
-
-### Ver Reportes en S3
-
-```bash
-# Listar reportes
-aws s3 ls s3://backup-reporter-reports-prod-ACCOUNT_ID/reports/ --recursive
-
-# Descargar reporte específico
-aws s3 cp s3://backup-reporter-reports-prod-ACCOUNT_ID/reports/2025/12/backup-report-2025-12-04.xlsx .
-```
-
-### Métricas de Lambda
-
-```bash
-# Ver invocaciones
-aws cloudwatch get-metric-statistics \
-  --namespace AWS/Lambda \
-  --metric-name Invocations \
-  --dimensions Name=FunctionName,Value=backup-reporter-prod \
-  --start-time 2025-12-01T00:00:00Z \
-  --end-time 2025-12-05T00:00:00Z \
-  --period 3600 \
-  --statistics Sum
-```
-
-## 🐛 Troubleshooting
-
-### Email no se envía
-
-1. **Verificar identidades SES**:
-   ```bash
-   aws ses get-identity-verification-attributes \
-     --identities david.amaya@axity.com Luis.PerezR@axity.com \
-     --region us-east-1
-   ```
-
-2. **Revisar límites de SES**:
-   ```bash
-   aws ses get-send-quota --region us-east-1
-   ```
-
-3. **Verificar logs de Lambda** para errores específicos
-
-### No se generan backups en el reporte
-
-- Verificar que los rangos de tiempo sean correctos
-- Revisar que la cuenta tenga permisos para `backup:ListBackupJobs`
-- Ejecutar el script original manualmente para verificar datos
-
-### Error de permisos
-
-```bash
-# Verificar rol de Lambda
-aws iam get-role --role-name backup-reporter-prod-role
-
-# Verificar políticas adjuntas
-aws iam list-role-policies --role-name backup-reporter-prod-role
-```
-
-## 🔐 Seguridad
-
-- ✅ Bucket S3 con encriptación AES256
-- ✅ Versionado habilitado en S3
-- ✅ Acceso público bloqueado
-- ✅ Principio de mínimo privilegio en IAM
-- ✅ CloudWatch Logs con retención limitada
-- ✅ SES en sandbox o producción según configuración
-
-## 🗑️ Limpieza
-
-Para eliminar todos los recursos:
-
-```bash
-# ADVERTENCIA: Esto eliminará el bucket S3 y todos los reportes
 terraform destroy
 ```
-
-Si quieres mantener los reportes:
-
-```bash
-# Primero, vaciar el bucket
-aws s3 rm s3://backup-reporter-reports-prod-ACCOUNT_ID/ --recursive
-
-# Luego destruir
-terraform destroy
-```
-
-## 📝 Mantenimiento
-
-### Actualizar Lambda
-
-```bash
-# Modificar lambda_function.py
-# Luego aplicar cambios
-terraform apply
-```
-
-### Actualizar Dependencias
-
-```bash
-# Editar requirements.txt
-# Limpiar layer anterior
-rm -rf layer/ lambda_layer.zip
-
-# Re-aplicar
-terraform apply
-```
-
-## 🔄 CI/CD (Opcional)
-
-Ejemplo con GitHub Actions:
-
-```yaml
-name: Deploy Backup Reporter
-
-on:
-  push:
-    branches: [main]
-    paths:
-      - 'reporte_backups/**'
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
-      
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
-      
-      - name: Terraform Init
-        run: terraform init
-        working-directory: reporte_backups
-      
-      - name: Terraform Apply
-        run: terraform apply -auto-approve
-        working-directory: reporte_backups
-```
-
-## 📞 Soporte
-
-Para preguntas o problemas:
-- Revisar logs de CloudWatch
-- Verificar configuración de SES
-- Comprobar permisos IAM
-- Contactar al equipo de infraestructura
-
-## 📄 Licencia
-
-Uso interno - Axity

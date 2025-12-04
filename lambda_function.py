@@ -16,12 +16,14 @@ FROM_EMAIL = os.environ['FROM_EMAIL']
 TO_EMAILS = os.environ['TO_EMAILS'].split(',')
 CC_EMAILS = os.environ.get('CC_EMAILS', '').split(',') if os.environ.get('CC_EMAILS') else []
 
-# Mapeo de cuentas
-ACCOUNT_MAPPING = {
-    '123456789012': 'No-SAP',
-    '234567890123': 'Redes y seguridad',
-    '345678901234': 'SAP'
-}
+def get_account_name(account_id, org_client):
+    """Obtiene el nombre de la cuenta desde AWS Organizations"""
+    try:
+        response = org_client.describe_account(AccountId=account_id)
+        return response['Account']['Name']
+    except Exception as e:
+        print(f"No se pudo obtener nombre para cuenta {account_id}: {str(e)}")
+        return account_id
 
 def lambda_handler(event, context):
     """Función principal de Lambda"""
@@ -29,6 +31,10 @@ def lambda_handler(event, context):
     backup_client = boto3.client('backup')
     s3_client = boto3.client('s3')
     ses_client = boto3.client('ses')
+    org_client = boto3.client('organizations')
+    
+    # Cache para nombres de cuentas
+    account_names_cache = {}
     
     # Fechas y horas para filtrado
     now = datetime.now(timezone.utc)
@@ -73,12 +79,12 @@ def lambda_handler(event, context):
     print(f"Jobs día anterior: {len(yesterday_jobs)}")
     print(f"Jobs día actual: {len(today_jobs)}")
     
-    # Generar resúmenes
-    yesterday_summary = generate_summary(yesterday_jobs)
-    today_summary = generate_summary(today_jobs)
+    # Generar resúmenes con nombres de cuentas dinámicos
+    yesterday_summary = generate_summary(yesterday_jobs, org_client, account_names_cache)
+    today_summary = generate_summary(today_jobs, org_client, account_names_cache)
     
     # Crear archivo Excel
-    excel_buffer = create_excel_report(yesterday_jobs, today_jobs, yesterday, today)
+    excel_buffer = create_excel_report(yesterday_jobs, today_jobs, yesterday, today, org_client, account_names_cache)
     
     # Guardar en S3
     filename = f"backup-report-{today.strftime('%Y-%m-%d')}.xlsx"
@@ -114,13 +120,18 @@ def lambda_handler(event, context):
         })
     }
 
-def generate_summary(jobs):
+def generate_summary(jobs, org_client, account_names_cache):
     """Genera resumen por cuenta y estado"""
     summary = {}
     
     for job in jobs:
         account_id = job.get('AccountId', 'Unknown')
-        account_name = ACCOUNT_MAPPING.get(account_id, account_id)
+        
+        # Obtener nombre de cuenta (con cache)
+        if account_id not in account_names_cache:
+            account_names_cache[account_id] = get_account_name(account_id, org_client)
+        
+        account_name = account_names_cache[account_id]
         state = job.get('State', 'UNKNOWN')
         
         if account_name not in summary:
@@ -135,7 +146,7 @@ def generate_summary(jobs):
     
     return summary
 
-def create_excel_report(yesterday_jobs, today_jobs, yesterday_date, today_date):
+def create_excel_report(yesterday_jobs, today_jobs, yesterday_date, today_date, org_client, account_names_cache):
     """Crea archivo Excel con el reporte detallado"""
     wb = Workbook()
     
@@ -156,7 +167,7 @@ def create_excel_report(yesterday_jobs, today_jobs, yesterday_date, today_date):
         cell.alignment = Alignment(horizontal="center")
     
     # Datos del resumen (día actual)
-    today_summary = generate_summary(today_jobs)
+    today_summary = generate_summary(today_jobs, org_client, account_names_cache)
     row = 2
     for account_name in sorted(today_summary.keys()):
         ws_summary.cell(row=row, column=1, value=account_name)
@@ -171,11 +182,11 @@ def create_excel_report(yesterday_jobs, today_jobs, yesterday_date, today_date):
     
     # Hoja 2: Detalle Día Anterior
     ws_yesterday = wb.create_sheet("Día Anterior")
-    create_detail_sheet(ws_yesterday, yesterday_jobs, header_fill, header_font)
+    create_detail_sheet(ws_yesterday, yesterday_jobs, header_fill, header_font, org_client, account_names_cache)
     
     # Hoja 3: Detalle Día Actual
     ws_today = wb.create_sheet("Día Actual")
-    create_detail_sheet(ws_today, today_jobs, header_fill, header_font)
+    create_detail_sheet(ws_today, today_jobs, header_fill, header_font, org_client, account_names_cache)
     
     # Guardar en buffer
     excel_buffer = BytesIO()
@@ -184,7 +195,7 @@ def create_excel_report(yesterday_jobs, today_jobs, yesterday_date, today_date):
     
     return excel_buffer
 
-def create_detail_sheet(worksheet, jobs, header_fill, header_font):
+def create_detail_sheet(worksheet, jobs, header_fill, header_font, org_client, account_names_cache):
     """Crea hoja de detalle con todos los jobs"""
     headers = [
         "BackupJobID", "Status", "AccountID", "AccountName", 
@@ -201,7 +212,12 @@ def create_detail_sheet(worksheet, jobs, header_fill, header_font):
     row = 2
     for job in jobs:
         account_id = job.get('AccountId', '-')
-        account_name = ACCOUNT_MAPPING.get(account_id, account_id)
+        
+        # Obtener nombre de cuenta (con cache)
+        if account_id not in account_names_cache:
+            account_names_cache[account_id] = get_account_name(account_id, org_client)
+        
+        account_name = account_names_cache[account_id]
         
         worksheet.cell(row=row, column=1, value=job.get('BackupJobId', '-'))
         worksheet.cell(row=row, column=2, value=job.get('State', '-'))

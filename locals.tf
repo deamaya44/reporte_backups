@@ -9,13 +9,6 @@ locals {
   to_emails  = ["Luis.PerezR@axity.com"]
   cc_emails  = []
   
-  # Mapeo de cuentas AWS a nombres
-  account_mapping = {
-    "123456789012" = "No-SAP"
-    "234567890123" = "Redes y seguridad"
-    "345678901234" = "SAP"
-  }
-  
   # Configuración de Lambda
   lambda_timeout      = 300
   lambda_memory_size  = 512

@@ -1,0 +1,51 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CloudWatchLogs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "arn:aws:logs:${aws_region}:${account_id}:log-group:/aws/lambda/${function_name}*"
+    },
+    {
+      "Sid": "BackupReadAccess",
+      "Effect": "Allow",
+      "Action": [
+        "backup:ListBackupJobs",
+        "backup:DescribeBackupJob"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "S3WriteAccess",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:PutObjectAcl"
+      ],
+      "Resource": "${bucket_arn}/*"
+    },
+    {
+      "Sid": "SESAccess",
+      "Effect": "Allow",
+      "Action": [
+        "ses:SendEmail",
+        "ses:SendRawEmail"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "OrganizationsReadAccess",
+      "Effect": "Allow",
+      "Action": [
+        "organizations:DescribeAccount",
+        "organizations:ListAccounts"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

@@ -87,16 +87,6 @@ Resumen del DÍA ACTUAL (finalizados entre 00:00 y 07:00 AM, 2025-12-04):
 
 Se adjunta el reporte detallado en Excel.
 ```
-
-## 📁 Estructura del Reporte Excel
-
-### Hoja 1: Resumen
-- AccountName
-- T. COMPLETED
-- T. FAILED
-
-### Hoja 2: Día Anterior (Detalle)
-
 ## Estructura del Reporte Excel
 
 ### Hoja 1: Resumen

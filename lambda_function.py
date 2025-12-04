@@ -264,12 +264,9 @@ def send_email(ses_client, yesterday_summary, today_summary, excel_buffer, filen
     msg.attach(attachment)
     
     # Enviar
-    recipients = TO_EMAILS + CC_EMAILS
-    
     try:
         response = ses_client.send_raw_email(
             Source=FROM_EMAIL,
-            Destinations=recipients,
             RawMessage={'Data': msg.as_string()}
         )
         print(f"Email enviado. MessageId: {response['MessageId']}")

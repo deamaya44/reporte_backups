@@ -6,7 +6,8 @@ locals {
   
   # Configuración de emails
   from_email = "david.amaya@axity.com"
-  to_emails  = ["Luis.PerezR@axity.com"]
+#   to_emails  = ["Luis.PerezR@axity.com"]
+  to_emails  = ["david.amaya@axity.com"]
   cc_emails  = []
   
   # Configuración de Lambda

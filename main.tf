@@ -171,11 +171,15 @@ resource "aws_lambda_permission" "allow_eventbridge" {
 # ==============================================================================
 # SES EMAIL VERIFICATION
 # ==============================================================================
+# NOTA: SES está en modo sandbox. Para enviar a cualquier email sin verificar:
+# 1. AWS Console → SES → Account dashboard → "Request production access"
+# 2. Llena el formulario y espera aprobación (~24 horas)
 
 resource "aws_ses_email_identity" "from_email" {
   email = local.from_email
 }
 
+# Verificar destinatarios (requerido mientras SES esté en sandbox)
 resource "aws_ses_email_identity" "to_emails" {
   for_each = toset(local.to_emails)
   email    = each.value

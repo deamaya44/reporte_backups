@@ -36,11 +36,13 @@ def lambda_handler(event, context):
     # Cache para nombres de cuentas
     account_names_cache = {}
     
-    # Fechas simples - solo día completo
-    now = datetime.now(timezone.utc)
+    # Fechas simples - solo día completo (UTC-5 Colombia)
+    utc_minus_5 = timezone(timedelta(hours=-5))
+    now = datetime.now(utc_minus_5)
     today = now.date()
     yesterday = today - timedelta(days=1)
     
+    print(f"Hora actual UTC-5: {now}")
     print(f"Fecha de hoy: {today}")
     print(f"Fecha de ayer: {yesterday}")
     
@@ -69,8 +71,9 @@ def lambda_handler(event, context):
         if not creation_date:
             continue
         
-        # Obtener solo la fecha (sin hora)
-        job_date = creation_date.date()
+        # Convertir a UTC-5 y obtener solo la fecha
+        creation_date_local = creation_date.astimezone(utc_minus_5)
+        job_date = creation_date_local.date()
         
         if job_date == yesterday:
             yesterday_jobs.append(job)

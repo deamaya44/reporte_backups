@@ -36,48 +36,49 @@ def lambda_handler(event, context):
     # Cache para nombres de cuentas
     account_names_cache = {}
     
-    # Fechas y horas para filtrado
+    # Fechas simples - solo día completo
     now = datetime.now(timezone.utc)
     today = now.date()
     yesterday = today - timedelta(days=1)
     
-    # Día anterior: después de las 07:00 AM
-    yesterday_cutoff = datetime.combine(yesterday, datetime.min.time().replace(hour=7), tzinfo=timezone.utc)
+    print(f"Fecha de hoy: {today}")
+    print(f"Fecha de ayer: {yesterday}")
     
-    # Día actual: entre 00:00 y 07:00 AM
-    today_start = datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc)
-    today_cutoff = datetime.combine(today, datetime.min.time().replace(hour=7), tzinfo=timezone.utc)
-    
-    print(f"Procesando backups para fecha: {today}")
-    print(f"Rango día anterior: después de {yesterday_cutoff}")
-    print(f"Rango día actual: {today_start} - {today_cutoff}")
-    
-    # Obtener todos los backup jobs
+    # Obtener todos los backup jobs (últimos 2 días)
     all_jobs = []
     paginator = backup_client.get_paginator('list_backup_jobs')
     
-    for page in paginator.paginate(ByAccountId='*'):
+    # Filtrar por los últimos 2 días para traer menos datos
+    by_created_after = datetime.combine(yesterday, datetime.min.time(), tzinfo=timezone.utc)
+    
+    for page in paginator.paginate(
+        ByAccountId='*',
+        ByCreatedAfter=by_created_after
+    ):
         all_jobs.extend(page['BackupJobs'])
     
     print(f"Total de jobs obtenidos: {len(all_jobs)}")
     
-    # Filtrar por rangos de tiempo
+    # Filtrar por fecha simple - solo comparar el día
     yesterday_jobs = []
     today_jobs = []
     
     for job in all_jobs:
-        creation_date = job['CreationDate']
+        creation_date = job.get('CreationDate')
         
-        # Día anterior (después de 07:00 AM)
-        if yesterday_cutoff <= creation_date < today_start:
+        if not creation_date:
+            continue
+        
+        # Obtener solo la fecha (sin hora)
+        job_date = creation_date.date()
+        
+        if job_date == yesterday:
             yesterday_jobs.append(job)
-        
-        # Día actual (00:00 - 07:00 AM)
-        elif today_start <= creation_date < today_cutoff:
+        elif job_date == today:
             today_jobs.append(job)
     
-    print(f"Jobs día anterior: {len(yesterday_jobs)}")
-    print(f"Jobs día actual: {len(today_jobs)}")
+    print(f"Jobs de ayer ({yesterday}): {len(yesterday_jobs)}")
+    print(f"Jobs de hoy ({today}): {len(today_jobs)}")
     
     # Generar resúmenes con nombres de cuentas dinámicos
     yesterday_summary = generate_summary(yesterday_jobs, org_client, account_names_cache)
@@ -247,9 +248,9 @@ def send_email(ses_client, yesterday_summary, today_summary, excel_buffer, filen
     msg = MIMEMultipart()
     msg['From'] = FROM_EMAIL
     msg['To'] = ', '.join(TO_EMAILS)
-    if CC_EMAILS:
+    if CC_EMAILS and CC_EMAILS[0]:
         msg['Cc'] = ', '.join(CC_EMAILS)
-    msg['Subject'] = f"CAME - Reporte de Backups de Máquinas Virtuales AWS – Resumen {today_date}"
+    msg['Subject'] = f"HV - Reporte de Backups de Máquinas Virtuales AWS – Resumen {today_date}"
     
     # Cuerpo del email
     body = generate_email_body(yesterday_summary, today_summary, yesterday_date, today_date)
@@ -263,11 +264,17 @@ def send_email(ses_client, yesterday_summary, today_summary, excel_buffer, filen
     attachment.add_header('Content-Disposition', f'attachment; filename={filename}')
     msg.attach(attachment)
     
+    # Preparar destinatarios
+    destinations = TO_EMAILS.copy()
+    if CC_EMAILS and CC_EMAILS[0]:
+        destinations.extend(CC_EMAILS)
+    
     # Enviar
     try:
         response = ses_client.send_raw_email(
             Source=FROM_EMAIL,
-            RawMessage={'Data': msg.as_string()}
+            Destinations=destinations,
+            RawMessage={'Data': msg.as_bytes()}
         )
         print(f"Email enviado. MessageId: {response['MessageId']}")
     except Exception as e:
@@ -306,12 +313,12 @@ def generate_email_body(yesterday_summary, today_summary, yesterday_date, today_
     body = f"""
     <html>
     <body style="font-family: Arial, sans-serif;">
-        <p><strong>Resumen del DÍA ANTERIOR (finalizados después de las 07:00 AM, {yesterday_date}):</strong></p>
+        <p><strong>Resumen del DÍA ANTERIOR ({yesterday_date}):</strong></p>
         {yesterday_html}
         
         <br/>
         
-        <p><strong>Resumen del DÍA ACTUAL (finalizados entre 00:00 y 07:00 AM, {today_date}):</strong></p>
+        <p><strong>Resumen del DÍA ACTUAL ({today_date}):</strong></p>
         {today_html}
         
         <br/>
